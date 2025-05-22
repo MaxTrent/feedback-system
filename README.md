@@ -16,7 +16,7 @@ Balancee-Backend-Task is a User Feedback System built with Spring Boot and Java,
 
 ### POST /api/feedback
 **Request:**
-
+```bash
 curl -X POST http://localhost:8080/api/feedback \
 -H "Content-Type: application/json" \
 -d '{"userId": "user1", "message": "Great app!", "rating": 5}'
