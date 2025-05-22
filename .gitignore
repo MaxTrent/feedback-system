@@ -1,0 +1,17 @@
+# Maven build artifacts
+target/
+
+# IDE-specific files
+.idea/
+*.iml
+.vscode/launch.json
+.vscode/extensions.json
+
+# Logs
+*.log
+
+# macOS system files
+.DS_Store
+
+# Local configuration files (if any)
+application-local.properties
