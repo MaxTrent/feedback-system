@@ -1,7 +1,7 @@
 # Feedback-System
 
 ## Overview
-Feedback System is a simple User Feedback System built with Spring Boot and Java, using an in-memory H2 database. Users can submit feedback with a message and a rating (1–5), and admins can view all feedback with optional filtering by rating or date range.
+a simple User Feedback System built with Spring Boot and Java, using an in-memory H2 database. Users can submit feedback with a message and a rating (1–5), and admins can view all feedback with optional filtering by rating or date range.
 
 ## Features
 - **POST /api/feedback**: Allows users to submit feedback.
