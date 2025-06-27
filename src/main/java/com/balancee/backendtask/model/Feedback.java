@@ -4,10 +4,13 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 import jakarta.persistence.Entity;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.EnumType;
 import jakarta.persistence.Id;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 @Entity
 public class Feedback {
@@ -25,11 +28,19 @@ public class Feedback {
     @Max(value = 5, message = "rating must be at most 5")
     private int rating;
 
+    @NotNull(message = "category is required")
+    @Enumerated(EnumType.STRING)
+    private Category category;
+
+    @Enumerated(EnumType.STRING)
+    private Status status;
+
     private LocalDateTime createdAt;
 
     public Feedback() {
         this.id = UUID.randomUUID();
         this.createdAt = LocalDateTime.now();
+        this.status = Status.NEW;
     }
 
     // Getters and Setters
@@ -71,5 +82,21 @@ public class Feedback {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public Category getCategory() {
+        return category;
+    }
+
+    public void setCategory(Category category) {
+        this.category = category;
+    }
+
+    public Status getStatus() {
+        return status;
+    }
+
+    public void setStatus(Status status) {
+        this.status = status;
     }
 }
