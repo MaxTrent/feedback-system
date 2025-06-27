@@ -46,7 +46,8 @@ public class RateLimitingFilter implements Filter {
             }
             return lastTime;
         });
-        
+
+
         AtomicInteger count = requestCounts.get(key);
         if (count != null && count.incrementAndGet() > maxRequests) {
             httpResponse.setStatus(429);
@@ -54,7 +55,6 @@ public class RateLimitingFilter implements Filter {
             httpResponse.setContentType("application/json");
             return;
         }
-        
         chain.doFilter(request, response);
     }
     
