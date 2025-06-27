@@ -17,7 +17,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.balancee.backendtask.model.Feedback;
 import com.balancee.backendtask.model.Category;
 import com.balancee.backendtask.model.Status;
+import com.balancee.backendtask.model.Priority;
+import com.balancee.backendtask.model.AdminResponse;
 import com.balancee.backendtask.repository.FeedbackRepository;
+import com.balancee.backendtask.repository.AdminResponseRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 
@@ -33,10 +36,14 @@ class FeedbackControllerTest {
     private FeedbackRepository repository;
 
     @Autowired
+    private AdminResponseRepository adminResponseRepository;
+
+    @Autowired
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
+        adminResponseRepository.deleteAll();
         repository.deleteAll();
     }
 
@@ -57,6 +64,7 @@ class FeedbackControllerTest {
                 .andExpect(jsonPath("$.rating").value(5))
                 .andExpect(jsonPath("$.category").value("GENERAL"))
                 .andExpect(jsonPath("$.status").value("NEW"))
+                .andExpect(jsonPath("$.priority").value("MEDIUM"))
                 .andExpect(jsonPath("$.id").exists())
                 .andExpect(jsonPath("$.createdAt").exists());
     }
@@ -217,6 +225,94 @@ class FeedbackControllerTest {
         mockMvc.perform(put("/api/admin/feedback/" + saved.getId() + "/status?status=RESOLVED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RESOLVED"));
+    }
+
+    @Test
+    @WithMockUser(username = "admin", roles = {"ADMIN"})
+    void shouldAddAdminResponse() throws Exception {
+        Feedback feedback = new Feedback();
+        feedback.setUserId("user1");
+        feedback.setMessage("Bug report");
+        feedback.setRating(2);
+        feedback.setCategory(Category.BUG_REPORT);
+        Feedback saved = repository.save(feedback);
+
+        AdminResponse response = new AdminResponse();
+        response.setResponse("Thank you for the report. We're working on it.");
+        response.setAdminId("admin1");
+
+        mockMvc.perform(post("/api/admin/feedback/" + saved.getId() + "/response")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(response)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.response").value("Thank you for the report. We're working on it."))
+                .andExpect(jsonPath("$.adminId").value("admin1"))
+                .andExpect(jsonPath("$.id").exists())
+                .andExpect(jsonPath("$.createdAt").exists());
+    }
+
+    @Test
+    @WithMockUser(username = "admin", roles = {"ADMIN"})
+    void shouldGetFeedbackResponses() throws Exception {
+        Feedback feedback = new Feedback();
+        feedback.setUserId("user1");
+        feedback.setMessage("Bug report");
+        feedback.setRating(2);
+        feedback.setCategory(Category.BUG_REPORT);
+        Feedback saved = repository.save(feedback);
+
+        AdminResponse response = new AdminResponse();
+        response.setResponse("We're investigating this issue.");
+        response.setAdminId("admin1");
+        response.setFeedback(saved);
+        adminResponseRepository.save(response);
+
+        mockMvc.perform(get("/api/admin/feedback/" + saved.getId() + "/responses"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].response").value("We're investigating this issue."))
+                .andExpect(jsonPath("$[0].adminId").value("admin1"));
+    }
+
+    @Test
+    @WithMockUser(username = "admin", roles = {"ADMIN"})
+    void shouldFilterFeedbackByPriority() throws Exception {
+        Feedback feedback1 = new Feedback();
+        feedback1.setUserId("user1");
+        feedback1.setMessage("Critical bug!");
+        feedback1.setRating(1);
+        feedback1.setCategory(Category.BUG_REPORT);
+        feedback1.setPriority(Priority.HIGH);
+        repository.save(feedback1);
+
+        Feedback feedback2 = new Feedback();
+        feedback2.setUserId("user2");
+        feedback2.setMessage("Minor issue");
+        feedback2.setRating(4);
+        feedback2.setCategory(Category.GENERAL);
+        repository.save(feedback2);
+
+        mockMvc.perform(get("/api/admin/feedback?priority=HIGH"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].priority").value("HIGH"));
+    }
+
+    @Test
+    @WithMockUser(username = "admin", roles = {"ADMIN"})
+    void shouldUpdateFeedbackPriority() throws Exception {
+        Feedback feedback = new Feedback();
+        feedback.setUserId("user1");
+        feedback.setMessage("Important feedback");
+        feedback.setRating(3);
+        feedback.setCategory(Category.FEATURE_REQUEST);
+        Feedback saved = repository.save(feedback);
+
+        mockMvc.perform(put("/api/admin/feedback/" + saved.getId() + "/priority?priority=HIGH"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.priority").value("HIGH"));
     }
 
     @Test
