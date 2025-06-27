@@ -85,7 +85,7 @@ class FeedbackControllerTest {
     }
 
     @Test
-    void shouldRejectEmptyUserId() throws Exception {
+    void shouldAllowEmptyUserId() throws Exception {
         Feedback feedback = new Feedback();
         feedback.setUserId("");
         feedback.setMessage("Great app!");
@@ -95,8 +95,9 @@ class FeedbackControllerTest {
         mockMvc.perform(post("/api/feedback")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(feedback)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.userId").value("userId is required"));
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.userId").value(""))
+                .andExpect(jsonPath("$.message").value("Great app!"));
     }
 
     @Test
@@ -313,6 +314,23 @@ class FeedbackControllerTest {
         mockMvc.perform(put("/api/admin/feedback/" + saved.getId() + "/priority?priority=HIGH"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.priority").value("HIGH"));
+    }
+
+    @Test
+    void shouldAllowAnonymousFeedback() throws Exception {
+        Feedback feedback = new Feedback();
+        feedback.setMessage("Anonymous feedback");
+        feedback.setRating(4);
+        feedback.setCategory(Category.GENERAL);
+
+        mockMvc.perform(post("/api/feedback")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(feedback)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.userId").isEmpty())
+                .andExpect(jsonPath("$.message").value("Anonymous feedback"))
+                .andExpect(jsonPath("$.rating").value(4))
+                .andExpect(jsonPath("$.category").value("GENERAL"));
     }
 
     @Test

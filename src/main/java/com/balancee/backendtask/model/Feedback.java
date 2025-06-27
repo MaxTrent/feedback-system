@@ -20,7 +20,6 @@ public class Feedback {
     @Id
     private UUID id;
 
-    @NotBlank(message = "userId is required")
     private String userId;
 
     @NotBlank(message = "message is required")
