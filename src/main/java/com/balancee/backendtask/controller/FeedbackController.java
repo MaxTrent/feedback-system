@@ -7,6 +7,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -29,8 +34,16 @@ import com.balancee.backendtask.model.Category;
 import com.balancee.backendtask.model.Status;
 import com.balancee.backendtask.model.Priority;
 import com.balancee.backendtask.model.AdminResponse;
+import com.balancee.backendtask.model.Attachment;
 import com.balancee.backendtask.repository.FeedbackRepository;
 import com.balancee.backendtask.repository.AdminResponseRepository;
+import com.balancee.backendtask.repository.AttachmentRepository;
+
+import org.springframework.web.multipart.MultipartFile;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 
 import jakarta.validation.Valid;
 
@@ -40,10 +53,20 @@ public class FeedbackController {
     private static final Logger logger = LoggerFactory.getLogger(FeedbackController.class);
     private final FeedbackRepository repository;
     private final AdminResponseRepository adminResponseRepository;
+    private final AttachmentRepository attachmentRepository;
+    private final String uploadDir = "uploads/";
 
-    public FeedbackController(FeedbackRepository repository, AdminResponseRepository adminResponseRepository) {
+    public FeedbackController(FeedbackRepository repository, AdminResponseRepository adminResponseRepository, AttachmentRepository attachmentRepository) {
         this.repository = repository;
         this.adminResponseRepository = adminResponseRepository;
+        this.attachmentRepository = attachmentRepository;
+        
+        // Create upload directory if it doesn't exist
+        try {
+            Files.createDirectories(Paths.get(uploadDir));
+        } catch (Exception e) {
+            logger.error("Failed to create upload directory", e);
+        }
     }
 
     @PostMapping("/feedback")
@@ -56,41 +79,45 @@ public class FeedbackController {
 
     @GetMapping("/admin/feedback")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<Feedback>> getAllFeedback(
+    public ResponseEntity<Page<Feedback>> getAllFeedback(
             @RequestParam Optional<Integer> rating,
             @RequestParam Optional<Category> category,
             @RequestParam Optional<Status> status,
             @RequestParam Optional<Priority> priority,
             @RequestParam Optional<LocalDateTime> startDate,
-            @RequestParam Optional<LocalDateTime> endDate) {
-        logger.info("Fetching feedback with filters: rating={}, category={}, status={}, priority={}, startDate={}, endDate={}",
-                rating.orElse(null), category.orElse(null), status.orElse(null), priority.orElse(null), startDate.orElse(null), endDate.orElse(null));
+            @RequestParam Optional<LocalDateTime> endDate,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        Sort sort = Sort.by(sortDir.equalsIgnoreCase("desc") ? Sort.Direction.DESC : Sort.Direction.ASC, sortBy);
+        Pageable pageable = PageRequest.of(page, size, sort);
+        
+        logger.info("Fetching feedback with filters and pagination: page={}, size={}, sortBy={}, sortDir={}", 
+                page, size, sortBy, sortDir);
 
-        List<Feedback> feedbackList;
+        Page<Feedback> feedbackPage;
         if (priority.isPresent() && category.isPresent()) {
-            feedbackList = repository.findByPriorityAndCategory(priority.get(), category.get());
+            feedbackPage = repository.findByPriorityAndCategory(priority.get(), category.get(), pageable);
         } else if (priority.isPresent()) {
-            feedbackList = repository.findByPriority(priority.get());
+            feedbackPage = repository.findByPriority(priority.get(), pageable);
         } else if (status.isPresent() && category.isPresent()) {
-            feedbackList = repository.findByStatusAndCategory(status.get(), category.get());
+            feedbackPage = repository.findByStatusAndCategory(status.get(), category.get(), pageable);
         } else if (status.isPresent()) {
-            feedbackList = repository.findByStatus(status.get());
+            feedbackPage = repository.findByStatus(status.get(), pageable);
         } else if (rating.isPresent() && category.isPresent()) {
-            feedbackList = repository.findByCategoryAndRating(category.get(), rating.get());
+            feedbackPage = repository.findByCategoryAndRating(category.get(), rating.get(), pageable);
         } else if (category.isPresent()) {
-            feedbackList = repository.findByCategory(category.get());
-        } else if (rating.isPresent() && startDate.isPresent() && endDate.isPresent()) {
-            feedbackList = repository.findByRatingAndCreatedAtBetween(rating.get(), startDate.get(), endDate.get());
+            feedbackPage = repository.findByCategory(category.get(), pageable);
         } else if (rating.isPresent()) {
-            feedbackList = repository.findByRating(rating.get());
-        } else if (startDate.isPresent() && endDate.isPresent()) {
-            feedbackList = repository.findByCreatedAtBetween(startDate.get(), endDate.get());
+            feedbackPage = repository.findByRating(rating.get(), pageable);
         } else {
-            feedbackList = repository.findAll();
+            feedbackPage = repository.findAll(pageable);
         }
 
-        logger.info("Returning {} feedback entries", feedbackList.size());
-        return ResponseEntity.ok(feedbackList);
+        logger.info("Returning {} feedback entries (page {} of {})", 
+                feedbackPage.getNumberOfElements(), feedbackPage.getNumber() + 1, feedbackPage.getTotalPages());
+        return ResponseEntity.ok(feedbackPage);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -174,5 +201,53 @@ public class FeedbackController {
         
         logger.info("Feedback {} priority updated to {}", id, priority);
         return ResponseEntity.ok(updated);
+    }
+
+    @PostMapping("/feedback/{id}/attachments")
+    public ResponseEntity<?> uploadAttachment(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file) {
+        
+        if (file.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "File is required"));
+        }
+        
+        Optional<Feedback> feedbackOpt = repository.findById(id);
+        if (feedbackOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        try {
+            String fileName = System.currentTimeMillis() + "_" + file.getOriginalFilename();
+            Path filePath = Paths.get(uploadDir + fileName);
+            Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+            
+            Attachment attachment = new Attachment();
+            attachment.setFeedback(feedbackOpt.get());
+            attachment.setFileName(file.getOriginalFilename());
+            attachment.setContentType(file.getContentType());
+            attachment.setFileSize(file.getSize());
+            attachment.setFilePath(filePath.toString());
+            
+            Attachment saved = attachmentRepository.save(attachment);
+            logger.info("File uploaded for feedback {}: {}", id, fileName);
+            
+            return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+        } catch (Exception e) {
+            logger.error("Failed to upload file", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to upload file"));
+        }
+    }
+
+    @GetMapping("/feedback/{id}/attachments")
+    public ResponseEntity<List<Attachment>> getFeedbackAttachments(@PathVariable UUID id) {
+        Optional<Feedback> feedbackOpt = repository.findById(id);
+        if (feedbackOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        List<Attachment> attachments = attachmentRepository.findByFeedback(feedbackOpt.get());
+        return ResponseEntity.ok(attachments);
     }
 }
